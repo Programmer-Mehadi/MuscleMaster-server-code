@@ -1,7 +1,7 @@
 const express = require("express");
 const cors = require('cors');
 require('dotenv').config()
-const { MongoClient, ServerApiVersion } = require('mongodb');
+const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -10,20 +10,41 @@ const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology:
 
 const run = async () => {
 
-    const database = client.db('MuscleMaster');
-    app.get('/services', async (req, res) => {
-        const query = {};
-        const cursor = await database.collection('services').find(query);
-        const services = await cursor.toArray();
-        res.send(services)
-    })
+    try {
+        const servicesCollection = client.db('MuscleMaster').collection('services');
+
+        app.get('/', (req, res) => {
+            res.send('MuscleMaster Server Running.')
+        })
+
+        app.get('/services', async (req, res) => {
+            const query = {};
+            const cursor = await servicesCollection.find(query);
+            const services = await cursor.toArray();
+            res.send(services)
+        })
+
+        app.get('/services/:id', async (req, res) => {
+            const id = req.params.id;
+            if (id.length === 24) {
+                const query = { _id: ObjectId(id) };
+                const service = await servicesCollection.findOne(query);
+                console.log(service);
+                res.send(service);
+            }
+            else {
+                res.send("Error: No Data found !");
+            }
+
+        })
+    }
+    finally {
+
+    }
 
 }
 run()
 
-app.get('/', (req, res) => {
-    res.send('MuscleMaster Server Running.')
-})
 
 
 app.listen(port, () => {
