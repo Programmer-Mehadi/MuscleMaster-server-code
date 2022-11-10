@@ -1,6 +1,6 @@
 const express = require("express");
 const cors = require('cors');
-
+const jwt = require('jsonwebtoken');
 require('dotenv').config()
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb');
 
@@ -11,16 +11,41 @@ const port = process.env.PORT || 5000;
 const uri = `mongodb+srv://${process.env.MONGODB_USER}:${process.env.MONGODB_PASSWORD}@cluster0.p3ywohz.mongodb.net/?retryWrites=true&w=majority`;
 const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology: true, serverApi: ServerApiVersion.v1 });
 
+function verifyJWT(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(401).send({ message: 'unauthorized access' })
+    }
+    else {
+        const token = authHeader.split(' ')[1];
+        jwt.verify(token, process.env.JWT_SECRET_KEY, function (err, decoded) {
+            if (err) {
+                return res.status(403).send({ message: 'unauthorized access' })
+            }
+            else {
+                req.decoded = decoded;
+                next();
+            }
+
+        })
+    }
+
+}
+
 const run = async () => {
 
     try {
         const servicesCollection = client.db('MuscleMaster').collection('services');
         const reviewsCollection = client.db('MuscleMaster').collection('reviews');
-
+        // console.log(require('crypto').randomBytes(64).toString('hex'));
         app.get('/', (req, res) => {
             res.send('MuscleMaster Server Running.')
         })
-
+        app.post('/jwt', (req, res) => {
+            const user = req.body;
+            const token = jwt.sign(user, process.env.JWT_SECRET_KEY, { expiresIn: '1h' });
+            res.send({ token });
+        })
         app.get('/services', async (req, res) => {
             const limit = req.query.limit
             if (limit) {
@@ -43,7 +68,7 @@ const run = async () => {
             if (id.length === 24) {
                 const query = { _id: ObjectId(id) };
                 const service = await servicesCollection.findOne(query);
-                console.log(service);
+
                 res.send(service);
             }
             else {
@@ -54,7 +79,7 @@ const run = async () => {
             const id = req.params.id;
             if (id.length === 24) {
                 const query = { serviceId: id };
-                const cursor = await reviewsCollection.find(query);
+                const cursor = await reviewsCollection.find(query).sort({ time: -1 });
                 const reviews = await cursor.toArray();
                 res.send(reviews);
             }
@@ -67,12 +92,18 @@ const run = async () => {
                 res.send(review);
             }
         })
-        app.get('/myreviews/:id', async (req, res) => {
+        app.get('/myreviews/:id', verifyJWT, async (req, res) => {
+            const decoded = req.decoded;
             const id = req.params.id;
             const query = { userId: id };
-            const cursor = await reviewsCollection.find(query).sort({ time: -1 });
-            const reviews = await cursor.toArray();
-            res.send(reviews);
+            if (id !== decoded?.uid) {
+                res.status(403).send({ message: 'unauthorized access' })
+            }
+            else {
+                const cursor = await reviewsCollection.find(query);
+                const reviews = await cursor.toArray();
+                res.send(reviews);
+            }
         })
         app.post('/addreview', async (req, res) => {
             const reviewData = req.body;
@@ -107,7 +138,7 @@ const run = async () => {
         })
 
         app.post('/addservice', async (req, res) => {
-            console.log(req.body);
+
             const serviceData = req.body;
             const result = await servicesCollection.insertOne(serviceData);
             res.send(result);
